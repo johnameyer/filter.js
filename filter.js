@@ -1,4 +1,14 @@
+//https://stackoverflow.com/questions/8532960/how-do-you-run-javascript-script-through-the-terminal
+
 (function(exports){
+	var obj, keys, aliases;
+	exports.init = function(input){
+		obj = input;
+		keys = input.keys;
+		aliases = input.aliases;
+		unions = Object.assign(unions,input.unions);
+		compares = Object.assign(compares,input.compares);
+	}
 	var unions = {
 			"and":	function(x,y){return x && y},
 			"nand":	function(x,y){return !(x && y)},
@@ -11,17 +21,12 @@
 			"&":	function(x,y){return x && y},
 			"&&":	function(x,y){return x && y}
 	}
-	var unionsRegex = /(n?and|x?n?or|&+|\|+)/gi;
 	var compares = {
 			"like":function(val,ref){return val.match(toRegex(ref)) != null},
-			"not like":function(val,ref){return val.match(toRegex(ref)) == null},
 			"equals":function(val,ref){return val==ref},
-			"not equals":function(val,ref){return val!=ref},
 			"=":function(val,ref){return val == ref},
 			"==":function(val,ref){return val == ref},
-			"!=":function(val,ref){return val != ref},
 			"~":function(val,ref){return val.match(toRegex(ref)) != null},
-			"!~":function(val,ref){return val.match(toRegex(ref)) == null},
 			"":function(val,ref){return val.match(toRegex(ref)) != null},
 			"after":function(val,ref){return new Date(val.replace(/(\d{2})(?:\/)(\d{4})/,"$2-$1")) > new Date(ref.replace(/(\d{2})(?:\/)(\d{4})/,"$2-$1"))},
 			"before":function(val,ref){return new Date(val.replace(/(\d{2})(?:\/)(\d{4})/,"$2-$1")) < new Date(ref.replace(/(\d{2})(?:\/)(\d{4})/,"$2-$1"))},
@@ -29,26 +34,10 @@
 			"<":function(val,ref){return Number.parseFloat(val) < Number.parseFloat(ref)}
 	}
 	
-	exports.keys = ["firstname", "lastname", "registrationnumber", "emailaddress",
-		"status", "major", "school", "desiredemploymenttype", "schoolyear",
-		"gpa", "graduationdate", "emailsent", "updateddate", "phone"];
-	
-	var aliases = {
-			"fname": "firstname",
-			"lname": "lastname",
-			"first": "firstname",
-			"last": "lastname",
-			"email": "emailaddress",
-			"updated": "updated",
-			"desiredemployment": "desiredemploymenttype",
-			"graduation": "graduationdate",
-			"graddate": "graduationdate",
-			"phonenumber": "phone"
-	}
-	
 	//support for non traditional names? Enumerate object types?
 	
 	exports.compile = function(query) {
+		if(!obj) throw "Please initialize using the init() function";
 		query = query.replace(/(\s)\s+/g, "$1").replace("%",".*?").trim();
 		//^[a-zA-Z0-9 \"\(\)\-]*$ -- valid chars
 		var s,t;
@@ -82,29 +71,27 @@
             throw "Empty query";
         } else if (split.length == 1) {
             //plain text search
+            if(!obj.plaintext) "Please use proper syntax";
             return [false, strip_q(split[0])]; //first index indicates whether this contains arrays
         } else if (split.length == 2) {
         	if(exports.keys.indexOf(split[0]) >= 0){
-        		return [false, split[0], "", strip_q(split[1])];
+        		return [false, split[0], [false,""], strip_q(split[1])];
         	}
         	if(Object.keys(aliases).indexOf(split[0]) >= 0){
-        		return [false, aliases[split[0]], "", strip_q(split[1])];
+        		return [false, aliases[split[0]], [false,""], strip_q(split[1])];
     		}
         } else if (split.length == 3) {
+        	var x;
         	if(Object.keys(compares).indexOf(split[1]) >= 0){
         		if(Object.keys(aliases).indexOf(split[0]) >= 0){
         			split[0] = aliases[split[0]];
         		}
-                return [false, split[0], split[1], strip_q(split[2])];
-        	}
-        } else if (split.length == 4) {
-        	if(Object.keys(compares).indexOf(split[1] + " " + split[2]) >= 0){
-        		if(Object.keys(aliases).indexOf(split[0]) >= 0){
-        			split[0] = aliases[split[0]];
-        		}
-        		return [false, split[0], split[1] + " " + split[2], strip_q(split[3])];
+                return [false, split[0], [false,split[1]], strip_q(split[2])];
+        	} else if((x = split[1].match("^(?:not|!)(.+)$")) && Object.keys(aliases).indexOf(x[1])>=0){
+                return [false, split[0], [true, split[1]], strip_q(split[2])];
         	}
         }
+        if(!obj.plaintext) throw "Please use proper syntax";
         return compile_union(split.join(" AND "));
     }
     
@@ -113,7 +100,7 @@
     }
 	
 	exports.filter = function(compQuery, data) {
-	
+		if(!obj) throw "Please initialize using the init() function";
 	    if (compQuery[0]) { //first index indicates whether this contains arrays
 	        return union(compQuery, data, Object.values(data).toString());
 	    } else {
@@ -139,7 +126,7 @@
         	if(data[compQuery[1]] == undefined){
         		throw "Unknown alias " + compQuery[1];
         	}
-            return compares[compQuery[2]](data[compQuery[1]].toLowerCase(), compQuery[3]);
+            return compQuery[2][0] ^ compares[compQuery[2][1]](data[compQuery[1]].toLowerCase(), compQuery[3]);
         }
         throw "Invalid Query"; //TODO implement actual exceptions
     }
@@ -153,4 +140,23 @@
 	        return new RegExp(str, "gi");
 	    }
 	}
-})(window.filter = new Object());
+})(window[document.currentScript.getAttribute("data-binding")||"filter"] = new Object());
+filter.init({
+	keys: ["firstname", "lastname", "registrationnumber", "emailaddress",
+		"status", "major", "school", "desiredemploymenttype", "schoolyear",
+		"gpa", "graduationdate", "emailsent", "updateddate", "phone"],
+	aliases: {
+			"fname": "firstname",
+			"lname": "lastname",
+			"first": "firstname",
+			"last": "lastname",
+			"email": "emailaddress",
+			"updated": "updated",
+			"desiredemployment": "desiredemploymenttype",
+			"graduation": "graduationdate",
+			"graddate": "graduationdate",
+			"phonenumber": "phone"
+	},
+	strict: false,
+	plaintext: true
+});
