@@ -1,15 +1,24 @@
 //https://stackoverflow.com/questions/8532960/how-do-you-run-javascript-script-through-the-terminal
+//var f = new Function("return true")
+{
+	const reduce = Function.bind.call(Function.call, Array.prototype.reduce);
+	const isEnumerable = Function.bind.call(Function.call, Object.prototype.propertyIsEnumerable);
+	const concat = Function.bind.call(Function.call, Array.prototype.concat);
+	const keys = Reflect.ownKeys;
 
-(function(exports){
-	var obj, keys, aliases;
-	exports.init = function(input){
-		obj = input;
-		keys = input.keys;
-		aliases = input.aliases;
-		unions = Object.assign(unions,input.unions);
-		compares = Object.assign(compares,input.compares);
+	if (!Object.values) {
+		Object.values = function values(O) {
+			return reduce(keys(O), (v, k) => concat(v, typeof k === 'string' && isEnumerable(O, k) ? [O[k]] : []), []);
+		};
 	}
-	var unions = {
+}
+(function(exports){
+	exports.defaults = {
+		"plaintext": false,
+		"compileAliases": false,
+		"strictKeys": false,
+		"projection": {},
+		"unions": {
 			"and":	function(x,y){return x && y},
 			"nand":	function(x,y){return !(x && y)},
 			"or":	function(x,y){return x || y},
@@ -20,8 +29,8 @@
 			"||":	function(x,y){return x || y},
 			"&":	function(x,y){return x && y},
 			"&&":	function(x,y){return x && y}
-	}
-	var compares = {
+		},
+		"compares": {
 			"like":function(val,ref){return val.match(toRegex(ref)) != null},
 			"equals":function(val,ref){return val==ref},
 			"=":function(val,ref){return val == ref},
@@ -32,19 +41,53 @@
 			"before":function(val,ref){return new Date(val.replace(/(\d{2})(?:\/)(\d{4})/,"$2-$1")) < new Date(ref.replace(/(\d{2})(?:\/)(\d{4})/,"$2-$1"))},
 			">":function(val,ref){return Number.parseFloat(val) > Number.parseFloat(ref)},
 			"<":function(val,ref){return Number.parseFloat(val) < Number.parseFloat(ref)}
+		},
+		"keys": [],
+		"aliases": {}
+	};
+	var set = JSON.parse(JSON.stringify(exports.defaults));//TODO bad practice?
+	exports.set = function(input){
+		try{
+			function ifElse(name){return (input[name]==undefined?set[name]:input[name])};
+			if(!input) input = new Object();
+			if(input.errorCallback && typeof (input.errorCallback) != "function") throw new exports.SettingException("Not a function");
+			if(Object.keys(ifElse("aliases")).length==0&&ifElse("compileAliases")) throw new exports.SettingException("No aliases");
+			if(ifElse("keys").length==0&&ifElse("strictKeys")) throw new exports.SettingException("No keys");
+			if(ifElse("strictKeys") && ifElse("aliases")){
+				var arr = Object.values(ifElse("aliases"));//TODO messy?
+				for(index in arr){
+					if(ifElse("keys").indexOf(arr[index]) < 0) throw new exports.SettingException("Alias maps to invalid key");//TODO consider nature of ifelses - especially with objects/arrays
+				}
+			}
+			set = Object.assign(set,input);
+			set.unions = Object.assign(exports.defaults.unions,input.unions);
+			set.compares = Object.assign(exports.defaults.compares,input.compares);
+			//TODO should unions and compares be cumulative?
+		}catch(e){
+			if(set.errorCallback){
+				set.errorCallback(e);
+				return set;
+			}else throw e;
+		}
 	}
 	
 	//support for non traditional names? Enumerate object types?
 	
 	exports.compile = function(query) {
-		if(!obj) throw "Please initialize using the init() function";
-		query = query.replace(/(\s)\s+/g, "$1").replace("%",".*?").trim();
-		//^[a-zA-Z0-9 \"\(\)\-]*$ -- valid chars
-		var s,t;
-		if((typeof(t = query.match(/\(/gi)) != typeof(s = query.match(/\)/gi))) || (s instanceof Array && s.length!=t.length)) throw "Parentheses opened but not closed";
-		if((s = query.match(/\"/gi)) && s.length%2 == 1) throw "Quotes opened but not closed";
-	    query = query.replace(/(\s)\s+/g, "$1").replace("%",".*?").trim(); //clean spaces and replace wildcard character
-	    return compile_union(query);
+		try{
+			query = query.replace(/(\s)\s+/g, "$1").replace("%",".*?").trim();
+			//^[a-zA-Z0-9 \"\(\)\-]*$ -- valid chars
+			var s,t;
+			if((typeof(t = query.match(/\(/gi)) != typeof(s = query.match(/\)/gi))) || (s instanceof Array && s.length!=t.length)) throw "Parentheses opened but not closed";
+			if((s = query.match(/\"/gi)) && s.length%2 == 1) throw "Quotes opened but not closed";
+		    query = query.replace(/(\s)\s+/g, "$1").replace("%",".*?").trim(); //clean spaces and replace wildcard character
+		    return compile_union(query);
+		}catch(e){
+			if(set.errorCallback){
+				set.errorCallback(e);
+				return null;
+			} else throw e;
+		}
 	}
 	
 	function compile_union(query) {
@@ -67,32 +110,43 @@
 
     function compile_comparison(query) {
         var split = query.split(/\s(?=(?:(?:[^\"]*\"){2})*(?![^\"]*\"))/gi);
+        if(split.length >= 2){
+        	if(set.strictKeys && !(set.keys.indexOf(split[0])>=0 || Object.keys(set.aliases).indexOf(split[0]) >=0))
+        		if(!set.plaintext)//TODO consider plaintext?
+        			throw new exports.InvalidQuery("Invalid key");
+        		else
+        			return compile_union(split.join(" and "));
+        }
         if (split.length == 0) {
             throw "Empty query";
         } else if (split.length == 1) {
             //plain text search
-            if(!obj.plaintext) "Please use proper syntax";
+            if(!set.plaintext) throw new exports.InvalidQuery("Plaintext not enabled");
             return [false, strip_q(split[0])]; //first index indicates whether this contains arrays
         } else if (split.length == 2) {
-        	if(exports.keys.indexOf(split[0]) >= 0){
-        		return [false, split[0], [false,""], strip_q(split[1])];
-        	}
-        	if(Object.keys(aliases).indexOf(split[0]) >= 0){
-        		return [false, aliases[split[0]], [false,""], strip_q(split[1])];
+        	if(set.compileAliases && Object.keys(set.aliases).indexOf(split[0]) >= 0){
+        		return [false, set.aliases[split[0]], [false,set.compileFunctions?set.compares[""]:""], strip_q(split[1])];
     		}
+        	if(set.keys.indexOf(split[0]) >= 0){
+        		return [false, split[0], [false,set.compileFunctions?set.compares[""]:""], strip_q(split[1])];
+        	}
         } else if (split.length == 3) {
+        	if(set.compileAliases && Object.keys(set.aliases).indexOf(split[0]) >= 0){
+        		split[0] = set.aliases[split[0]];
+        	}
+
         	var x;
-        	if(Object.keys(compares).indexOf(split[1]) >= 0){
-        		if(Object.keys(aliases).indexOf(split[0]) >= 0){
-        			split[0] = aliases[split[0]];
-        		}
+        	if(Object.keys(set.compares).indexOf(split[1]) >= 0){
+        		//TODO should factor in keys check / compilealiases here?
+        		if(set.compileFunctions) split[1] = set.compares[split[1]];
                 return [false, split[0], [false,split[1]], strip_q(split[2])];
-        	} else if((x = split[1].match("^(?:not|!)(.+)$")) && Object.keys(aliases).indexOf(x[1])>=0){
-                return [false, split[0], [true, split[1]], strip_q(split[2])];
+        	} else if((x = split[1].match("^(?:not|!)(.+)$")) && Object.keys(set.compares).indexOf(x[1])>=0){//TODO fix
+        		if(set.compileFunctions) x[1] = set.compares[x[1]];
+                return [false, split[0], [true, x[1]], strip_q(split[2])];
         	}
         }
-        if(!obj.plaintext) throw "Please use proper syntax";
-        return compile_union(split.join(" AND "));
+        if(!set.plaintext) throw new exports.InvalidQuery("Plaintext not enabled");
+        return compile_union(split.join(" and "));
     }
     
     function strip_q(q){
@@ -100,20 +154,26 @@
     }
 	
 	exports.filter = function(compQuery, data) {
-		if(!obj) throw "Please initialize using the init() function";
-	    if (compQuery[0]) { //first index indicates whether this contains arrays
-	        return union(compQuery, data, Object.values(data).toString());
-	    } else {
-	        return comparison(compQuery, data, Object.values(data).toString());
-	    }
-	    //invalid query handling?
+		try{
+		    if (compQuery[0]) { //first index indicates whether this contains arrays
+		        return union(compQuery, data, Object.values(data).toString());
+		    } else {
+		        return comparison(compQuery, data, Object.values(data).toString());
+		    }
+		    //invalid query handling?
+	    }catch(e){
+			if(set.errorCallback){
+				set.errorCallback(e);
+				return true;
+			}else throw e;
+		}
 	}
 	
 	function union(compQuery, data, str_rep) {
         //assert comQuery[0] == true
         var last = (compQuery[1][0] ? union : comparison)(compQuery[1], data, str_rep); //union vs comparison with remove parentheses
         for (var i = 2; i < compQuery.length; i += 2) {
-            last = unions[compQuery[i].toLowerCase()](last, (compQuery[i + 1][0] ? union : comparison)(compQuery[i + 1], data, str_rep)); // handle undefined function
+            last = set.unions[compQuery[i].toLowerCase()](last, (compQuery[i + 1][0] ? union : comparison)(compQuery[i + 1], data, str_rep)); // handle undefined function
         }
         return last;
     }
@@ -126,7 +186,7 @@
         	if(data[compQuery[1]] == undefined){
         		throw "Unknown alias " + compQuery[1];
         	}
-            return compQuery[2][0] ^ compares[compQuery[2][1]](data[compQuery[1]].toLowerCase(), compQuery[3]);
+            return compQuery[2][0] ^ set.compares[compQuery[2][1]](data[compQuery[1]].toLowerCase(), compQuery[3]);
         }
         throw "Invalid Query"; //TODO implement actual exceptions
     }
@@ -140,8 +200,20 @@
 	        return new RegExp(str, "gi");
 	    }
 	}
-})(window[document.currentScript.getAttribute("data-binding")||"filter"] = new Object());
-filter.init({
+	exports.InvalidQuery = function(message) {
+    	this.message = message;
+  	}
+  	exports.InvalidQuery.prototype.toString = function(){
+    	return this.message;
+  	};
+  	exports.SettingException = function(message) {
+    	this.message = message;
+  	}
+  	exports.SettingException.prototype.toString = function(){
+    	return this.message;
+  	};
+})(("undefined" != typeof window?window:global)[("undefined" != typeof document?document.currentScript.getAttribute("data-binding"):null)||"filter"] = new Object());
+/*filter.init({
 	keys: ["firstname", "lastname", "registrationnumber", "emailaddress",
 		"status", "major", "school", "desiredemploymenttype", "schoolyear",
 		"gpa", "graduationdate", "emailsent", "updateddate", "phone"],
@@ -159,4 +231,4 @@ filter.init({
 	},
 	strict: false,
 	plaintext: true
-});
+});*/
