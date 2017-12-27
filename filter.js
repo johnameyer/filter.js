@@ -14,6 +14,7 @@
 }
 (function(exports){
 	exports.defaults = {
+		"errorCallback": undefined,
 		"plaintext": false,
 		"compileAliases": false,
 		"strictKeys": false,
@@ -63,6 +64,7 @@
 			set.unions = Object.assign(exports.defaults.unions,input.unions);
 			set.compares = Object.assign(exports.defaults.compares,input.compares);
 			//TODO should unions and compares be cumulative?
+			//if both can be true, should do an implicit or of both plain text and original?
 		}catch(e){
 			if(set.errorCallback){
 				set.errorCallback(e);
