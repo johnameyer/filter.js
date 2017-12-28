@@ -1,5 +1,25 @@
 const {test} = QUnit;
 
+/*filter.init({
+	keys: ["firstname", "lastname", "registrationnumber", "emailaddress",
+		"status", "major", "school", "desiredemploymenttype", "schoolyear",
+		"gpa", "graduationdate", "emailsent", "updateddate", "phone"],
+	aliases: {
+			"fname": "firstname",
+			"lname": "lastname",
+			"first": "firstname",
+			"last": "lastname",
+			"email": "emailaddress",
+			"updated": "updated",
+			"desiredemployment": "desiredemploymenttype",
+			"graduation": "graduationdate",
+			"graddate": "graduationdate",
+			"phonenumber": "phone"
+	},
+	strict: false,
+	plaintext: true
+});*/
+
 QUnit.module("compile-test",{
 	beforeEach: function() {
 		filter.set(filter.defaults);
@@ -107,17 +127,7 @@ test("strictKeys", function(assert){//errors if refrenced key is not in passed k
 	assert.deepEqual(filter.compile("lorenzo like magnificent"), [true,[false,"lorenzo"],"and",[false,"like"],"and",[false,"magnificent"]],"Defaults to plaintext because no key");
 });
 
-/*test("projection", function(assert){//only listed keys can be searched (e.g. precompile checks)- else plaintext if enabled
-	
-	//how is this different from strict keys? -- plaintext?
-
-	filter.set({"projection": {}});
-	//filter.set({aliases:{"fname":"firstname","lname":"lastname"}});
-	//assert.throws(function(){
-	//	filter.compile("lname like meyer");
-	//},filter.CompilationException,"Alias compiles but key is not in set");
-});*/
-
+/*
 test("compileFunctions", function(assert){
 	assert.expect(1);
 	filter.set({"compileFunctions":true});
@@ -129,6 +139,7 @@ test("lowercase", function(assert){
 	assert.expect(0);
 	//test lowercase
 });
+*/
 
 test("failure callback", function(assert){
 	assert.expect(3);
@@ -139,7 +150,7 @@ test("failure callback", function(assert){
 	var errorVar;
 	filter.set({"errorCallback":function(error){errorVar = error;}});
 	assert.equal(filter.compile("jack"),null,"Does not throw an error directly");
-	assert.ok(errorVar instanceof filter.InvalidQuery,"Error is defined and is InvalidQuery");
+	assert.ok(errorVar instanceof filter.InvalidQueryException,"Error is defined and is InvalidQuery");
 	//failure callback - no longer should throw, just nulls
 });
 /*filter.set({
